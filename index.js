@@ -1,16 +1,18 @@
 const { Telegraf } = require('telegraf');
 const express = require('express');
 require('dotenv').config();
-const { Low, JSONFile } = require('lowdb');
+const { Low } = require('lowdb');
+const { JSONFile } = require('lowdb/node'); // ✅ Fix for Node v22
 
-// Express web server for uptime
 const app = express();
 app.get('/', (req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 
-// Setup LowDB database
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
+
+// ... rest of the bot code continues
+
 
 (async () => {
   await db.read();
