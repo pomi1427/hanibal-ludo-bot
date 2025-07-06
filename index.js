@@ -58,22 +58,28 @@ bot.hears('📝 Register', async (ctx) => {
   });
 });
 
-// ✅ Handle OTP replies
-bot.on('text', async (ctx) => {
+// ✅ Smart OTP handler that doesn’t block other buttons
+bot.on('text', async (ctx, next) => {
   const id = ctx.from.id;
   const msg = ctx.message.text.trim();
   const name = ctx.from.first_name;
   const username = ctx.from.username || 'none';
 
-  if (pendingOTPs[id] && msg === pendingOTPs[id]) {
-    delete pendingOTPs[id];
+  if (pendingOTPs[id]) {
+    if (msg === pendingOTPs[id]) {
+      delete pendingOTPs[id];
 
-    await db.read();
-    db.data.users.push({ id, name, username, coins: 0, referredBy: null });
-    await db.write();
+      await db.read();
+      db.data.users.push({ id, name, username, coins: 0, referredBy: null });
+      await db.write();
 
-    return ctx.reply(`🎉 Registered successfully, ${name}!`);
+      return ctx.reply(`🎉 Registered successfully, ${name}!`);
+    } else {
+      return ctx.reply('❗ Incorrect OTP. Please try again or click 📝 Register again.');
+    }
   }
+
+  return next(); // allow other handlers to work
 });
 
 // 📢 Referral link (fixed)
@@ -107,11 +113,5 @@ bot.hears('💸 Withdraw Money', (ctx) => {
 });
 
 // ✅ Launch bot
-(async () => {
-  await db.read();
-  db.data ||= { users: [] };
-  await db.write();
-  bot.launch();
-  console.log('🤖 Bot is running...');
-})();
+(async (
 
