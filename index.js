@@ -85,8 +85,72 @@ bot.on('text', async (ctx, next) => {
   }
 
   // 💰 Deposit amount
-  if (pendingDeposit
+  if (pendingDeposits[id]) {
+    const amount = parseFloat(msg);
+    if (isNaN(amount) || amount <= 0) {
+      return ctx.reply('❗ Invalid amount. Please enter a number like 50');
+    }
+
+    delete pendingDeposits[id];
+    ctx.reply(`💸 You requested to deposit ${amount} coins.\n⏳ Waiting for admin to confirm.`);
+
+    const ADMIN_ID = process.env.ADMIN_ID;
+    if (ADMIN_ID) {
+      ctx.telegram.sendMessage(ADMIN_ID, `📥 Deposit Request:\nFrom: @${username}\nID: ${id}\nAmount: ${amount} coins`);
+    }
+
+    return;
+  }
+
+  return next();
+});
+
+// 📢 Referral link
+bot.hears('📢 Referral Link', async (ctx) => {
+  const id = ctx.from.id;
+
+  await db.read();
+  const user = db.data.users.find(u => u.id === id);
+  if (!user) return ctx.reply('❗ You need to register first. Use 📝 Register.');
+
+  ctx.reply(`📢 Invite friends and earn coins!\nHere’s your link:\nhttps://t.me/${botUsername}?start=${id}`);
+});
+
+// 💼 Check balance
+bot.hears('💼 Check Balance', async (ctx) => {
+  const id = ctx.from.id;
+  await db.read();
+  const user = db.data.users.find(u => u.id === id);
+  if (!user) return ctx.reply('❗ You need to register first. Use 📝 Register.');
+
+  ctx.reply(`💰 Your current balance is: ${user.coins} coins`);
+});
+
+// 💰 Deposit
+bot.hears('💰 Deposit Money', async (ctx) => {
+  const id = ctx.from.id;
+  await db.read();
+  const user = db.data.users.find(u => u.id === id);
+  if (!user) return ctx.reply('❗ You need to register first. Use 📝 Register.');
+
+  pendingDeposits[id] = true;
+
+  ctx.reply(`💳 Please enter the amount you want to deposit (e.g. 50)\n💡 You’ll be contacted after confirmation.`);
+});
+
+// 💸 Withdraw
+bot.hears('💸 Withdraw Money', (ctx) => {
+  ctx.reply('💡 Withdrawal system coming soon...');
+});
+
+// ✅ Launch bot
+(async () => {
+  await db.read();
+  db.data ||= { users: [] };
+  await db.write();
+  bot.launch();
+  console.log('🤖 Bot is running...');
+})();
+
 
  
-
-
