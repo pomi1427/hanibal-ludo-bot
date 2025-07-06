@@ -103,7 +103,6 @@ const pendingOTPs = {};
     ctx.reply(📢 Share this referral link:\n${link});
   });
 
-  // ✅ Launch
   bot.launch();
   console.log('🤖 Bot is running...');
 })();
