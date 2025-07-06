@@ -70,6 +70,12 @@ const db = new Low(adapter, { users: [] });
       ctx.reply('❗ You are not registered yet. Send /start to register.');
     }
   });
+  // 📢 /refer command to share referral link
+  bot.command('refer', async (ctx) => {
+    const id = ctx.from.id;
+    const username = ctx.botInfo.username;
+    ctx.reply(`📢 Share this link to invite friends:\nhttps://t.me/${username}?start=${id}`);
+  });
 
   bot.launch();
   console.log('🤖 Bot is running...');
