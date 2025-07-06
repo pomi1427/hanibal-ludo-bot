@@ -16,16 +16,17 @@ const db = new Low(adapter, { users: [] });
 // 🤖 Setup bot
 const bot = new Telegraf(process.env.BOT_TOKEN);
 
-// 🔐 Global bot username (fallback)
+// 🔐 Bot username fallback
 let botUsername = 'HanibalLudoBot';
 bot.telegram.getMe().then(botInfo => {
   botUsername = botInfo.username;
 });
 
-// 🔐 Store pending OTPs
+// 🔐 Store OTPs and pending deposits
 const pendingOTPs = {};
+const pendingDeposits = {};
 
-// 🤖 START COMMAND (just shows menu, no auto registration)
+// 🤖 START COMMAND
 bot.start(async (ctx) => {
   const name = ctx.from.first_name;
 
@@ -34,21 +35,24 @@ bot.start(async (ctx) => {
     Markup.keyboard([
       ['💰 Deposit Money', '💸 Withdraw Money'],
       ['💼 Check Balance', '📝 Register'],
-      ['📢 Referral Link']
+      ['📢 Referral Link', '🔍 My ID']
     ])
     .resize()
   );
 });
 
-// 📝 REGISTER with OTP
+// 🔍 Handle "My ID" button
+bot.hears('🔍 My ID', (ctx) => {
+  ctx.reply(`🆔 Your Telegram ID is: ${ctx.from.id}`);
+});
+
+// 📝 REGISTER
 bot.hears('📝 Register', async (ctx) => {
   const id = ctx.from.id;
   await db.read();
   const user = db.data.users.find(u => u.id === id);
 
-  if (user) {
-    return ctx.reply('✅ You are already registered.');
-  }
+  if (user) return ctx.reply('✅ You are already registered.');
 
   const otp = Math.floor(1000 + Math.random() * 9000).toString();
   pendingOTPs[id] = otp;
@@ -58,13 +62,14 @@ bot.hears('📝 Register', async (ctx) => {
   });
 });
 
-// ✅ Smart OTP handler that doesn’t block other buttons
+// ✅ OTP + Deposit + Text handler
 bot.on('text', async (ctx, next) => {
   const id = ctx.from.id;
   const msg = ctx.message.text.trim();
   const name = ctx.from.first_name;
   const username = ctx.from.username || 'none';
 
+  // ✅ OTP Check
   if (pendingOTPs[id]) {
     if (msg === pendingOTPs[id]) {
       delete pendingOTPs[id];
@@ -79,46 +84,9 @@ bot.on('text', async (ctx, next) => {
     }
   }
 
-  return next(); // allow other handlers to work
-});
+  // 💰 Deposit amount
+  if (pendingDeposit
 
-// 📢 Referral link (fixed)
-bot.hears('📢 Referral Link', async (ctx) => {
-  const id = ctx.from.id;
-
-  await db.read();
-  const user = db.data.users.find(u => u.id === id);
-  if (!user) return ctx.reply('❗ You need to register first. Use 📝 Register.');
-
-  ctx.reply(`📢 Invite friends and earn coins!\nHere’s your link:\nhttps://t.me/${botUsername}?start=${id}`);
-});
-
-// 💼 Check balance (fixed)
-bot.hears('💼 Check Balance', async (ctx) => {
-  const id = ctx.from.id;
-  await db.read();
-  const user = db.data.users.find(u => u.id === id);
-  if (!user) return ctx.reply('❗ You need to register first. Use 📝 Register.');
-
-  ctx.reply(`💰 Your current balance is: ${user.coins} coins`);
-});
-
-// 🛠 Placeholder for deposit/withdraw
-bot.hears('💰 Deposit Money', (ctx) => {
-  ctx.reply('💡 Deposit system coming soon...');
-});
-
-bot.hears('💸 Withdraw Money', (ctx) => {
-  ctx.reply('💡 Withdrawal system coming soon...');
-});
-
-// ✅ Launch bot
-(async () => {
-  await db.read();
-  db.data ||= { users: [] };
-  await db.write();
-  bot.launch();
-  console.log('🤖 Bot is running...');
-})();
+ 
 
 
