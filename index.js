@@ -1,66 +1,65 @@
-import { Telegraf } from 'telegraf';
-import express from 'express';
-import dotenv from 'dotenv';
-import { Low } from 'lowdb';
-import { JSONFile } from 'lowdb/node';
+const { Telegraf } = require('telegraf');
+const express = require('express');
+require('dotenv').config();
+const { Low, JSONFile } = require('lowdb');
 
-dotenv.config();
-
+// Express web server for uptime
 const app = express();
 app.get('/', (req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 
-// Setup database
+// Setup LowDB database
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
 
-await db.read();
-if (!db.data) {
-  db.data = { users: [] };
-}
-await db.write();
-
-// Telegram Bot
-const bot = new Telegraf(process.env.BOT_TOKEN);
-
-// /start [optional_referral]
-bot.start(async (ctx) => {
-  const id = ctx.from.id;
-  const name = ctx.from.first_name;
-  const username = ctx.from.username || 'none';
-  const text = ctx.message.text;
-  const referralId = text.split(' ')[1]; // if referral exists
-
+(async () => {
   await db.read();
-  let user = db.data.users.find(u => u.id === id);
+  db.data ||= { users: [] };
+  await db.write();
 
-  if (user) {
-    ctx.reply(`👋 Welcome back, ${name}! You're already registered.`);
-  } else {
-    // Register new user
-    const newUser = {
-      id,
-      name,
-      username,
-      coins: 0,
-      referredBy: referralId || null
-    };
+  const bot = new Telegraf(process.env.BOT_TOKEN);
 
-    db.data.users.push(newUser);
+  // Handle /start with optional referral
+  bot.start(async (ctx) => {
+    const id = ctx.from.id;
+    const name = ctx.from.first_name;
+    const username = ctx.from.username || 'none';
+    const text = ctx.message.text;
+    const referralId = text.split(' ')[1]; // optional referral code
 
-    // Reward referrer if valid
-    if (referralId) {
-      const refUser = db.data.users.find(u => u.id.toString() === referralId);
-      if (refUser) {
-        refUser.coins += 10;
-        await ctx.telegram.sendMessage(refUser.id, `🎉 You earned 10 coins for referring ${name}!`);
+    await db.read();
+    let user = db.data.users.find(u => u.id === id);
+
+    if (user) {
+      ctx.reply(`👋 Welcome back, ${name}! You're already registered.`);
+    } else {
+      const newUser = {
+        id,
+        name,
+        username,
+        coins: 0,
+        referredBy: referralId || null
+      };
+
+      db.data.users.push(newUser);
+
+      // Reward the referrer
+      if (referralId) {
+        const refUser = db.data.users.find(u => u.id.toString() === referralId);
+        if (refUser) {
+          refUser.coins += 10;
+          await ctx.telegram.sendMessage(refUser.id, `🎉 You earned 10 coins for referring ${name}!`);
+        }
       }
+
+      await db.write();
+
+      ctx.reply(`🎉 Welcome ${name}! You are now registered.\n\nYour coins: 0${referralId ? '\n👤 Referred by: ' + referralId : ''}`);
     }
+  });
 
-    await db.write();
+  bot.launch();
+  console.log('🤖 Bot is running...');
+})();
 
-    ctx.reply(`🎉 Welcome ${name}! You are now registered.\n\nYour coins: 0${referralId ? '\n👤 Referred by: ' + referralId : ''}`);
-  }
-});
-
-bot.launch();
+ 
