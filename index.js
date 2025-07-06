@@ -2,32 +2,33 @@ const { Telegraf } = require('telegraf');
 const express = require('express');
 require('dotenv').config();
 const { Low } = require('lowdb');
-const { JSONFile } = require('lowdb/node'); // ✅ Fix for Node v22
+const { JSONFile } = require('lowdb/node'); // ✅ works with Node.js 22
 
+// 🌐 Keep the bot alive on Render with Express
 const app = express();
 app.get('/', (req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 
+// 📦 Setup LowDB
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
 
-// ... rest of the bot code continues
-
-
 (async () => {
   await db.read();
+
+  // ✅ Fix: Set default data if file is empty
   db.data ||= { users: [] };
   await db.write();
 
   const bot = new Telegraf(process.env.BOT_TOKEN);
 
-  // Handle /start with optional referral
+  // 🧠 /start command with optional referral
   bot.start(async (ctx) => {
     const id = ctx.from.id;
     const name = ctx.from.first_name;
     const username = ctx.from.username || 'none';
     const text = ctx.message.text;
-    const referralId = text.split(' ')[1]; // optional referral code
+    const referralId = text.split(' ')[1]; // optional referral
 
     await db.read();
     let user = db.data.users.find(u => u.id === id);
@@ -45,7 +46,7 @@ const db = new Low(adapter);
 
       db.data.users.push(newUser);
 
-      // Reward the referrer
+      // 🎁 Reward referrer
       if (referralId) {
         const refUser = db.data.users.find(u => u.id.toString() === referralId);
         if (refUser) {
@@ -56,7 +57,19 @@ const db = new Low(adapter);
 
       await db.write();
 
-      ctx.reply(`🎉 Welcome ${name}! You are now registered.\n\nYour coins: 0${referralId ? '\n👤 Referred by: ' + referralId : ''}`);
+      ctx.reply(`🎉 Welcome ${name}! You're now registered.\n\n💰 Coins: 0${referralId ? '\n👤 Referred by: ' + referralId : ''}`);
+    }
+  });
+
+  // 👤 /me command to show user's info
+  bot.command('me', async (ctx) => {
+    const id = ctx.from.id;
+    await db.read();
+    const user = db.data.users.find(u => u.id === id);
+    if (user) {
+      ctx.reply(`👤 Name: ${user.name}\n💰 Coins: ${user.coins}\n🧾 Referred by: ${user.referredBy || 'None'}`);
+    } else {
+      ctx.reply('❗ You are not registered yet. Send /start to register.');
     }
   });
 
@@ -64,4 +77,5 @@ const db = new Low(adapter);
   console.log('🤖 Bot is running...');
 })();
 
+ 
  
