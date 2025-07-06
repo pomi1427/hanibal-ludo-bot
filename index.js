@@ -70,48 +70,5 @@ bot.on('text', async (ctx, next) => {
       delete pendingOTPs[id];
 
       await db.read();
-      db.data.users.push({ id, name, username, coins: 0, referredBy: null });
-      await db.write();
-
-      return ctx.reply(`🎉 Registered successfully, ${name}!`);
-    } else {
-      return ctx.reply('❗ Incorrect OTP. Please try again or click 📝 Register again.');
-    }
-  }
-
-  return next(); // allow other handlers to work
-});
-
-// 📢 Referral link (fixed)
-bot.hears('📢 Referral Link', async (ctx) => {
-  const id = ctx.from.id;
-
-  await db.read();
-  const user = db.data.users.find(u => u.id === id);
-  if (!user) return ctx.reply('❗ You need to register first. Use 📝 Register.');
-
-  ctx.reply(`📢 Invite friends and earn coins!\nHere’s your link:\nhttps://t.me/${botUsername}?start=${id}`);
-});
-
-// 💼 Check balance (fixed)
-bot.hears('💼 Check Balance', async (ctx) => {
-  const id = ctx.from.id;
-  await db.read();
-  const user = db.data.users.find(u => u.id === id);
-  if (!user) return ctx.reply('❗ You need to register first. Use 📝 Register.');
-
-  ctx.reply(`💰 Your current balance is: ${user.coins} coins`);
-});
-
-// 🛠 Placeholder for deposit/withdraw
-bot.hears('💰 Deposit Money', (ctx) => {
-  ctx.reply('💡 Deposit system coming soon...');
-});
-
-bot.hears('💸 Withdraw Money', (ctx) => {
-  ctx.reply('💡 Withdrawal system coming soon...');
-});
-
-// ✅ Launch bot
-(async (
+      db.data.users.push({ id, name, username, coins: 0,
 
