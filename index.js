@@ -11,7 +11,8 @@ app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 
 // 📦 Setup LowDB
 const adapter = new JSONFile('db.json');
-const db = new Low(adapter);
+const db = new Low(adapter, { users: [] }); ✅
+
 
 (async () => {
   await db.read();
