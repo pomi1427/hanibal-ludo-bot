@@ -4,16 +4,16 @@ require('dotenv').config();
 const { Low } = require('lowdb');
 const { JSONFile } = require('lowdb/node');
 
-// 🌐 Keep alive on Render
+// 🌐 Keep the bot alive
 const app = express();
 app.get('/', (req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 
-// 🔐 Admin ID and Coin Value
+// 🔐 Admin ID and Coin Rate
 const ADMIN_ID = process.env.ADMIN_ID;
 const COIN_VALUE_BIRR = 1;
 
-// 🧠 Setup LowDB
+// 📦 LowDB Setup
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
 const pendingOTPs = {};
@@ -25,7 +25,7 @@ const pendingOTPs = {};
 
   const bot = new Telegraf(process.env.BOT_TOKEN);
 
-  // 🟢 /start command
+  // 🤖 /start command
   bot.start((ctx) => {
     const name = ctx.from.first_name;
     ctx.reply(
@@ -39,47 +39,47 @@ const pendingOTPs = {};
     );
   });
 
-  // 💱 Coin rate info
+  // 💱 Coin Rates
   bot.hears('💱 Coin Rates', (ctx) => {
     ctx.reply(💰 1 Coin = ${COIN_VALUE_BIRR} Birr);
   });
 
   // 🔍 My ID
   bot.hears('🔍 My ID', (ctx) => {
-    ctx.reply(🆔 Your ID: ${ctx.from.id});
+    ctx.reply(🆔 Your Telegram ID is: ${ctx.from.id});
   });
 
-  // 📝 Register with OTP
+  // 📝 Register (OTP based)
   bot.hears('📝 Register', async (ctx) => {
     const id = ctx.from.id;
     await db.read();
-    const exists = db.data.users.find((u) => u.id === id);
-    if (exists) return ctx.reply('✅ You are already registered.');
+    const alreadyRegistered = db.data.users.find((u) => u.id === id);
+    if (alreadyRegistered) return ctx.reply('✅ You are already registered.');
 
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     pendingOTPs[id] = otp;
 
-    ctx.reply(📨 Your OTP is: ${otp}\nPlease reply with it to complete registration.);
+    ctx.reply(📨 Your OTP is: ${otp}\nPlease send it here to complete your registration.);
   });
 
-  // OTP verification
+  // ✅ Verify OTP
   bot.on('text', async (ctx) => {
     const id = ctx.from.id;
-    const text = ctx.message.text.trim();
+    const msg = ctx.message.text.trim();
     const expectedOtp = pendingOTPs[id];
 
-    if (expectedOtp && text === expectedOtp) {
-      const user = {
+    if (expectedOtp && msg === expectedOtp) {
+      const newUser = {
         id,
         name: ctx.from.first_name,
-        username: ctx.from.username || '',
+        username: ctx.from.username || 'none',
         coins: 0,
         referredBy: null
       };
-      db.data.users.push(user);
+      db.data.users.push(newUser);
       delete pendingOTPs[id];
       await db.write();
-      ctx.reply(✅ Registration complete!\n💰 Balance: 0 Coins);
+      return ctx.reply(✅ Registration complete!\n💰 Coins: 0);
     }
   });
 
@@ -103,8 +103,7 @@ const pendingOTPs = {};
     ctx.reply(📢 Share this referral link:\n${link});
   });
 
-  // 🚀 Launch the bot
+  // ✅ Launch
   bot.launch();
   console.log('🤖 Bot is running...');
 })();
-
