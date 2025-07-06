@@ -1,7 +1,7 @@
 {
   "name": "hanibal-ludo-bot",
   "version": "1.0.0",
-  "type": "commonjs",
+  "description": "Telegram bot with coins, referral, and admin tools",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
