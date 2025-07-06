@@ -15,7 +15,9 @@ const adapter = new JSONFile('db.json');
 const db = new Low(adapter);
 
 await db.read();
-db.data ||= { users: [] };
+if (!db.data) {
+  db.data = { users: [] };
+}
 await db.write();
 
 // Telegram Bot
@@ -62,4 +64,3 @@ bot.start(async (ctx) => {
 });
 
 bot.launch();
-
