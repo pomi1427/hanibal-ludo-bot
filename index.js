@@ -13,7 +13,14 @@ app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter, { users: [] });
 
+// 🤖 Setup bot
 const bot = new Telegraf(process.env.BOT_TOKEN);
+
+// 🔐 Global bot username (fallback)
+let botUsername = 'HanibalLudoBot';
+bot.telegram.getMe().then(botInfo => {
+  botUsername = botInfo.username;
+});
 
 // 🔐 Store pending OTPs
 const pendingOTPs = {};
@@ -58,7 +65,6 @@ bot.on('text', async (ctx) => {
   const name = ctx.from.first_name;
   const username = ctx.from.username || 'none';
 
-  // If it's an OTP response
   if (pendingOTPs[id] && msg === pendingOTPs[id]) {
     delete pendingOTPs[id];
 
@@ -70,19 +76,18 @@ bot.on('text', async (ctx) => {
   }
 });
 
-// 🧾 /referal command
+// 📢 Referral link (fixed)
 bot.hears('📢 Referral Link', async (ctx) => {
   const id = ctx.from.id;
-  const username = ctx.botInfo.username;
 
   await db.read();
   const user = db.data.users.find(u => u.id === id);
   if (!user) return ctx.reply('❗ You need to register first. Use 📝 Register.');
 
-  ctx.reply(`📢 Invite friends and earn rewards!\nHere’s your link:\nhttps://t.me/${username}?start=${id}`);
+  ctx.reply(`📢 Invite friends and earn coins!\nHere’s your link:\nhttps://t.me/${botUsername}?start=${id}`);
 });
 
-// 💼 Check Balance
+// 💼 Check balance (fixed)
 bot.hears('💼 Check Balance', async (ctx) => {
   const id = ctx.from.id;
   await db.read();
@@ -92,7 +97,7 @@ bot.hears('💼 Check Balance', async (ctx) => {
   ctx.reply(`💰 Your current balance is: ${user.coins} coins`);
 });
 
-// 🛠 Placeholder for deposit/withdraw (we’ll build logic next)
+// 🛠 Placeholder for deposit/withdraw
 bot.hears('💰 Deposit Money', (ctx) => {
   ctx.reply('💡 Deposit system coming soon...');
 });
@@ -104,6 +109,7 @@ bot.hears('💸 Withdraw Money', (ctx) => {
 // ✅ Launch bot
 (async () => {
   await db.read();
+  db.data ||= { users: [] };
   await db.write();
   bot.launch();
   console.log('🤖 Bot is running...');
