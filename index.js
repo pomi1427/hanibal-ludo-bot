@@ -1,9 +1,10 @@
-const { Telegraf } = require('telegraf');
-const express = require('express');
-require('dotenv').config();
-const { Low, JSONFile } = require('lowdb');
+import { Telegraf } from 'telegraf';
+import express from 'express';
+import dotenv from 'dotenv';
+import { Low, JSONFile } from 'lowdb';
 
-// Express server for uptime
+dotenv.config();
+
 const app = express();
 app.get('/', (req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
@@ -58,3 +59,5 @@ bot.start(async (ctx) => {
     ctx.reply(`🎉 Welcome ${name}! You are now registered.\n\nYour coins: 0${referralId ? '\n👤 Referred by: ' + referralId : ''}`);
   }
 });
+
+bot.launch();
