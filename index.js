@@ -10,14 +10,15 @@ app.get('/', (_req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const ADMIN_ID = process.env.ADMIN_ID;                 // Your Telegram ID
-const COIN_VALUE_BIRR = 1;                             // 1 coin = 1 Birr
+const ADMIN_ID = process.env.ADMIN_ID;                    // Your Telegram ID
+const COIN_VALUE_BIRR = 1;                                // 1 coin = 1 Birr
+const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;      // Set this in your env
 
 // ─── LowDB Setup ──────────────────────────────────────────────────────────────
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter, { users: [], deposits: [], withdrawals: [] });
 
-// Ensure database initialized
+// Initialize DB if empty
 (async () => {
   await db.read();
   db.data ||= { users: [], deposits: [], withdrawals: [] };
@@ -30,9 +31,9 @@ let botUsername = 'HanibalLudoBot';
 bot.telegram.getMe().then(info => botUsername = info.username);
 
 // ─── In‑Memory State ──────────────────────────────────────────────────────────
-const pendingOTPs = {};            // userID → OTP
-const pendingDepositRequests = {}; // userID → true
-const pendingWithdrawRequests = {}; // userID → true
+const pendingOTPs = {};
+const pendingDepositRequests = {};
+const pendingWithdrawRequests = {};
 
 // ─── /start & Main Menu ──────────────────────────────────────────────────────
 bot.start(async (ctx) => {
@@ -59,7 +60,7 @@ bot.hears('📝 Register', async (ctx) => {
   }
   const otp = String(Math.floor(1000 + Math.random() * 9000));
   pendingOTPs[id] = otp;
-  ctx.reply(`🔐 Your OTP: ${otp}\nPlease send it back to complete registration.`);
+  ctx.reply(`🔐 Your OTP: ${otp}\nSend it back exactly to complete registration.`);
 });
 bot.hears(/^\d{4}$/, async (ctx) => {
   const id = ctx.from.id, txt = ctx.message.text;
@@ -74,7 +75,7 @@ bot.hears(/^\d{4}$/, async (ctx) => {
     });
     delete pendingOTPs[id];
     await db.write();
-    return ctx.reply('🎉 Registration complete! You have 0 coins.');
+    ctx.reply('🎉 Registration complete! You have 0 coins.');
   }
 });
 
@@ -88,7 +89,7 @@ bot.hears('💼 Check Balance', async (ctx) => {
 
 // ─── Referral Link ───────────────────────────────────────────────────────────
 bot.hears('📢 Referral Link', (ctx) => {
-  ctx.reply(`🔗 Invite Friends:\nhttps://t.me/${botUsername}?start=${ctx.from.id}`);
+  ctx.reply(`🔗 Invite friends:\nhttps://t.me/${botUsername}?start=${ctx.from.id}`);
 });
 
 // ─── My ID ───────────────────────────────────────────────────────────────────
@@ -117,10 +118,16 @@ bot.hears('📊 Transactions', async (ctx) => {
   ctx.reply(msg, { parse_mode: 'Markdown' });
 });
 
-// ─── Deposit Flow ────────────────────────────────────────────────────────────
+// ─── Deposit Flow with Telebirr Instructions ─────────────────────────────────
 bot.hears('💰 Deposit Money', (ctx) => {
   pendingDepositRequests[ctx.from.id] = true;
-  ctx.reply('💵 How many coins would you like to deposit?');
+  ctx.reply(
+    `💳 To deposit coins:\n` +
+    `1. Send your payment to Telebirr number: *${TELEBIRR_NUMBER}*\n` +
+    `2. Then reply with the amount you paid (in coins).\n\n` +
+    `Example: \`50\``,
+    { parse_mode: 'Markdown' }
+  );
 });
 
 // ─── Withdraw Flow ───────────────────────────────────────────────────────────
@@ -138,19 +145,15 @@ bot.on('text', async (ctx) => {
 
   // Deposit Request
   if (pendingDepositRequests[id]) {
+    delete pendingDepositRequests[id];
     const amt = parseInt(txt, 10);
     if (isNaN(amt) || amt <= 0) {
-      delete pendingDepositRequests[id];
-      return ctx.reply('❗ Invalid amount.');
+      return ctx.reply('❗ Invalid amount. Please enter a positive number.');
     }
     const requestId = Date.now();
     db.data.deposits.push({ requestId, userId: id, amount: amt, status: 'pending' });
     await db.write();
-
-    delete pendingDepositRequests[id];
     ctx.reply(`📨 Deposit request for ${amt} coins submitted.`);
-
-    // Notify admin
     await bot.telegram.sendMessage(
       ADMIN_ID,
       `📥 Deposit #${requestId}\nUser: ${user.name} (${id})\nAmount: ${amt} coins`,
@@ -164,18 +167,15 @@ bot.on('text', async (ctx) => {
 
   // Withdraw Request
   if (pendingWithdrawRequests[id]) {
-    const amt = parseInt(txt, 10);
     delete pendingWithdrawRequests[id];
+    const amt = parseInt(txt, 10);
     if (isNaN(amt) || amt <= 0 || user.coins < amt) {
       return ctx.reply('❗ Invalid amount or insufficient balance.');
     }
     const requestId = Date.now();
     db.data.withdrawals.push({ requestId, userId: id, amount: amt, status: 'pending' });
     await db.write();
-
     ctx.reply(`📨 Withdrawal request for ${amt} coins submitted.`);
-
-    // Notify admin
     await bot.telegram.sendMessage(
       ADMIN_ID,
       `📤 Withdraw #${requestId}\nUser: ${user.name} (${id})\nAmount: ${amt} coins`,
