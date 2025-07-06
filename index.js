@@ -59,7 +59,6 @@ const pendingOTPs = {};
     const otp = Math.floor(1000 + Math.random() * 9000).toString();
     pendingOTPs[id] = otp;
 
-    // Send OTP
     ctx.reply(📨 Your OTP is: ${otp}\nPlease reply with it to complete registration.);
   });
 
@@ -108,8 +107,4 @@ const pendingOTPs = {};
   bot.launch();
   console.log('🤖 Bot is running...');
 })();
-
-   
-
-
 
