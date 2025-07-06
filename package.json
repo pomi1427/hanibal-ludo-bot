@@ -2,9 +2,9 @@
   "name": "hanibal-ludo-bot",
   "version": "1.0.0",
   "type": "commonjs",
-  "main": "index.js",
+  "main": "index.cjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.cjs"
   },
   "dependencies": {
     "dotenv": "^16.0.3",
@@ -13,4 +13,3 @@
     "telegraf": "^4.12.2"
   }
 }
-
