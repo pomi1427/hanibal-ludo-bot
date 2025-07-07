@@ -10,13 +10,13 @@ app.get('/', (_req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const ADMIN_ID = process.env.ADMIN_ID;                    // Your Telegram ID
-const COIN_VALUE_BIRR = 1;                                // 1 coin = 1 Birr
-const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;      // From env
+const ADMIN_ID = process.env.ADMIN_ID;
+const COIN_VALUE_BIRR = 1;
+const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;
 
 // ─── LowDB Setup ──────────────────────────────────────────────────────────────
 const adapter = new JSONFile('db.json');
-const db = new Low(adapter, { users: [], deposits: [], withdrawals: [] });
+const db = new Low(adapter);
 (async () => {
   await db.read();
   db.data ||= { users: [], deposits: [], withdrawals: [] };
@@ -29,9 +29,9 @@ let botUsername = 'HanibalLudoBot';
 bot.telegram.getMe().then(info => botUsername = info.username);
 
 // ─── In‑Memory State ──────────────────────────────────────────────────────────
-const pendingOTPs = {};             // userId → otp
-const pendingDeposits = {};         // userId → { step, amount }
-const pendingWithdrawals = {};      // userId → true
+const pendingOTPs = {};
+const pendingDeposits = {};
+const pendingWithdrawals = {};
 
 // ─── /start & Menu ────────────────────────────────────────────────────────────
 bot.start((ctx) => {
@@ -47,6 +47,18 @@ bot.start((ctx) => {
     `👋 Welcome, ${ctx.from.first_name}!\n💰 1 Coin = ${COIN_VALUE_BIRR} Birr\nUse the menu below:`,
     Markup.keyboard(menu).resize()
   );
+});
+
+// ─── Admin Tools ──────────────────────────────────────────────────────────────
+bot.hears('🛠 Admin Tools', async (ctx) => {
+  if (ctx.from.id.toString() !== ADMIN_ID) return;
+  await db.read();
+  const users = db.data.users;
+  const deposits = db.data.deposits.filter(d => d.status === 'pending');
+  const withdrawals = db.data.withdrawals.filter(w => w.status === 'pending');
+
+  let msg = `🛠 *Admin Tools*\n\n👥 Users: ${users.length}\n🟢 Pending Deposits: ${deposits.length}\n🔴 Pending Withdrawals: ${withdrawals.length}`;
+  ctx.reply(msg, { parse_mode: 'Markdown' });
 });
 
 // ─── Register with OTP ────────────────────────────────────────────────────────
@@ -137,13 +149,14 @@ bot.on('photo', async (ctx) => {
   if (pd && pd.step === 'await_screenshot') {
     const fileId = ctx.message.photo.slice(-1)[0].file_id;
     const requestId = Date.now();
+    await db.read();
     db.data.deposits.push({
       requestId, userId: id, amount: pd.amount, status: 'pending', screenshot: fileId
     });
     await db.write();
     delete pendingDeposits[id];
     ctx.reply(`📨 Deposit of ${pd.amount} coins submitted with screenshot.`);
-    // Notify admin
+    const user = db.data.users.find(u => u.id === id);
     await bot.telegram.sendPhoto(
       ADMIN_ID,
       fileId,
@@ -163,8 +176,6 @@ bot.hears('💸 Withdraw Money', (ctx) => {
   pendingWithdrawals[ctx.from.id] = true;
   ctx.reply('💸 How many coins would you like to withdraw?');
 });
-
-// ─── Handle Withdraw Amount ──────────────────────────────────────────────────
 bot.on('text', async (ctx, next) => {
   const id = ctx.from.id, txt = ctx.message.text.trim();
   if (pendingWithdrawals[id]) {
@@ -192,47 +203,48 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-// ─── Admin Approval ──────────────────────────────────────────────────────────
+// ─── Admin Approvals ─────────────────────────────────────────────────────────
 bot.on('callback_query', async (ctx) => {
   const [action, type, reqId] = ctx.callbackQuery.data.split('_');
   await db.read();
-
   if (type === 'dep') {
-    const dep = db.data.deposits.find(d => d.requestId.toString()===reqId);
-    if (!dep||dep.status!=='pending') return ctx.answerCbQuery('Invalid');
-    const user = db.data.users.find(u=>u.id===dep.userId);
-    if (action==='approve') {
-      dep.status='approved'; user.coins+=dep.amount;
+    const dep = db.data.deposits.find(d => d.requestId.toString() === reqId);
+    const user = db.data.users.find(u => u.id === dep.userId);
+    if (!dep || dep.status !== 'pending') return ctx.answerCbQuery('Invalid');
+    if (action === 'approve') {
+      dep.status = 'approved';
+      user.coins += dep.amount;
       await db.write();
       ctx.editMessageCaption(`✅ Deposit #${reqId} approved.`);
       bot.telegram.sendMessage(user.id, `🎉 Your deposit of ${dep.amount} coins was approved!`);
     } else {
-      dep.status='rejected'; await db.write();
+      dep.status = 'rejected';
+      await db.write();
       ctx.editMessageCaption(`❌ Deposit #${reqId} rejected.`);
-      bot.telegram.sendMessage(dep.userId, `❌ Your deposit of ${dep.amount} coins was rejected.`);
+      bot.telegram.sendMessage(user.id, `❌ Your deposit of ${dep.amount} coins was rejected.`);
     }
     return ctx.answerCbQuery();
   }
-
-  if (type==='wd') {
-    const wd = db.data.withdrawals.find(w=>w.requestId.toString()===reqId);
-    if (!wd||wd.status!=='pending') return ctx.answerCbQuery('Invalid');
-    const user = db.data.users.find(u=>u.id===wd.userId);
-    if (action==='approve') {
-      wd.status='approved'; user.coins-=wd.amount;
+  if (type === 'wd') {
+    const wd = db.data.withdrawals.find(w => w.requestId.toString() === reqId);
+    const user = db.data.users.find(u => u.id === wd.userId);
+    if (!wd || wd.status !== 'pending') return ctx.answerCbQuery('Invalid');
+    if (action === 'approve') {
+      wd.status = 'approved';
+      user.coins -= wd.amount;
       await db.write();
       ctx.editMessageText(`✅ Withdrawal #${reqId} approved.`);
       bot.telegram.sendMessage(user.id, `✅ Your withdrawal of ${wd.amount} coins was approved!`);
     } else {
-      wd.status='rejected'; await db.write();
+      wd.status = 'rejected';
+      await db.write();
       ctx.editMessageText(`❌ Withdrawal #${reqId} rejected.`);
-      bot.telegram.sendMessage(wd.userId, `❌ Your withdrawal of ${wd.amount} coins was rejected.`);
+      bot.telegram.sendMessage(user.id, `❌ Your withdrawal of ${wd.amount} coins was rejected.`);
     }
     return ctx.answerCbQuery();
   }
 });
 
-// ─── Launch ─────────────────────────────────────────────────────────────────
+// ─── Launch Bot ───────────────────────────────────────────────────────────────
 bot.launch();
 console.log('🤖 Bot is running...');
-
