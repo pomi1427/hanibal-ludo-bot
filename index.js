@@ -14,12 +14,14 @@ const ADMIN_ID = process.env.ADMIN_ID;
 const COIN_VALUE_BIRR = 1;
 const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;
 
-// ─── LowDB Setup ──────────────────────────────────────────────────────────────
+// ─── LowDB Setup with default data ────────────────────────────────────────────
 const adapter = new JSONFile('db.json');
-const db = new Low(adapter);
+// Pass the default data object as the second argument here:
+const db = new Low(adapter, { users: [], deposits: [], withdrawals: [] });
+
 (async () => {
   await db.read();
-  db.data ||= { users: [], deposits: [], withdrawals: [] };
+  // No need for db.data ||= … since defaults are provided
   await db.write();
 })();
 
@@ -53,15 +55,17 @@ bot.start((ctx) => {
 bot.hears('🛠 Admin Tools', async (ctx) => {
   if (ctx.from.id.toString() !== ADMIN_ID) return;
   await db.read();
-  const users = db.data.users;
-  const deposits = db.data.deposits.filter(d => d.status === 'pending');
-  const withdrawals = db.data.withdrawals.filter(w => w.status === 'pending');
-
-  let msg = `🛠 *Admin Tools*\n\n👥 Users: ${users.length}\n🟢 Pending Deposits: ${deposits.length}\n🔴 Pending Withdrawals: ${withdrawals.length}`;
-  ctx.reply(msg, { parse_mode: 'Markdown' });
+  const pendingDeps = db.data.deposits.filter(d => d.status === 'pending');
+  const pendingWds = db.data.withdrawals.filter(w => w.status === 'pending');
+  ctx.reply(
+    `🛠 *Admin Panel*\n\n` +
+    `🟢 Pending Deposits: ${pendingDeps.length}\n` +
+    `🔴 Pending Withdrawals: ${pendingWds.length}`,
+    { parse_mode: 'Markdown' }
+  );
 });
 
-// ─── Register with OTP ────────────────────────────────────────────────────────
+// ─── Registration with OTP ────────────────────────────────────────────────────
 bot.hears('📝 Register', async (ctx) => {
   const id = ctx.from.id;
   await db.read();
@@ -91,7 +95,7 @@ bot.hears(/^\d{4}$/, async (ctx) => {
 bot.hears('💼 Check Balance', async (ctx) => {
   await db.read();
   const u = db.data.users.find(u => u.id === ctx.from.id);
-  return ctx.reply(u ? `💰 Your balance: ${u.coins} coins` : '❗ Please register first.');
+  ctx.reply(u ? `💰 Your balance: ${u.coins} coins` : '❗ Please register first.');
 });
 bot.hears('📢 Referral Link', (ctx) => {
   ctx.reply(`🔗 Invite:\nhttps://t.me/${botUsername}?start=${ctx.from.id}`);
@@ -106,12 +110,8 @@ bot.hears('📊 Transactions', async (ctx) => {
   if (!deps.length && !wds.length) {
     msg += '_No transactions yet._';
   } else {
-    if (deps.length) {
-      msg += '🟢 *Deposits:*\n' + deps.map(d=>`+${d.amount} (${d.status})`).join('\n') + '\n';
-    }
-    if (wds.length) {
-      msg += '\n🔴 *Withdrawals:*\n' + wds.map(w=>`-${w.amount} (${w.status})`).join('\n') + '\n';
-    }
+    if (deps.length) msg += '🟢 *Deposits:*\n' + deps.map(d => `+${d.amount} (${d.status})`).join('\n') + '\n';
+    if (wds.length) msg += '\n🔴 *Withdrawals:*\n' + wds.map(w => `-${w.amount} (${w.status})`).join('\n') + '\n';
   }
   ctx.reply(msg, { parse_mode: 'Markdown' });
 });
@@ -130,10 +130,9 @@ bot.on('text', async (ctx, next) => {
   const id = ctx.from.id, txt = ctx.message.text.trim();
   const pd = pendingDeposits[id];
   await db.read();
-  const user = db.data.users.find(u => u.id === id);
   if (pd && pd.step === 'await_amount') {
-    const amt = parseInt(txt,10);
-    if (isNaN(amt) || amt<=0) {
+    const amt = parseInt(txt, 10);
+    if (isNaN(amt) || amt <= 0) {
       delete pendingDeposits[id];
       return ctx.reply('❗ Invalid amount.');
     }
@@ -182,8 +181,8 @@ bot.on('text', async (ctx, next) => {
     delete pendingWithdrawals[id];
     await db.read();
     const user = db.data.users.find(u => u.id === id);
-    const amt = parseInt(txt,10);
-    if (isNaN(amt)||amt<=0||user.coins<amt) {
+    const amt = parseInt(txt, 10);
+    if (isNaN(amt) || amt <= 0 || user.coins < amt) {
       return ctx.reply('❗ Invalid amount or insufficient balance.');
     }
     const requestId = Date.now();
@@ -248,3 +247,4 @@ bot.on('callback_query', async (ctx) => {
 // ─── Launch Bot ───────────────────────────────────────────────────────────────
 bot.launch();
 console.log('🤖 Bot is running...');
+
