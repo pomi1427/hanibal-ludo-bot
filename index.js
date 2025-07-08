@@ -29,9 +29,9 @@ const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;
 // ─── LowDB Setup (with defaults) ──────────────────────────────────────────────
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter, {
-  users: [],        // { id, name, username, coins, referredBy, timestamp }
-  deposits: [],     // { id, userId, amount, status, screenshotFileId, timestamp }
-  withdrawals: []   // { id, userId, amount, status, timestamp }
+  users: [],        
+  deposits: [],     
+  withdrawals: []   
 });
 (async () => { await db.read(); await db.write(); })();
 
@@ -72,20 +72,20 @@ bot.start(async (ctx) => {
       username: ctx.from.username || '',
       coins: 0,
       referredBy: null,
-      timestamp: new Date().toISOString().slice(0,10)  // YYYY-MM-DD
+      timestamp: new Date().toISOString().slice(0,10)
     });
     await db.write();
   }
   const menu = [
     ['📝 Register', '💼 Check Balance'],
     ['💰 Deposit Money', '💸 Withdraw Money'],
-    ['🔍 My ID', '📊 Transactions']
+    ['🔍 My ID', '📊 Transactions'],
+    ['🆘 Help', '📞 Contact Us']
   ];
   if (id === ADMIN_ID) menu.push(['🛠 Admin Tools']);
   await ctx.reply(
     `👋 Hello, ${ctx.from.first_name}!\n` +
-    `💰 1 Coin = ${COIN_VALUE_BIRR} Birr\n` +
-    `Use the menu below:`,
+    `💰 1 Coin = ${COIN_VALUE_BIRR} Birr\nUse the menu below:`,
     Markup.keyboard(menu).resize()
   );
 });
@@ -115,6 +115,17 @@ bot.command('help', (ctx) => {
     `📊 Transactions – View your history\n` +
     `🛠 Admin Tools – (admin only) All users & pending\n` +
     `/help – Show this menu`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
+// ─── Contact Us Handler ───────────────────────────────────────────────────────
+bot.hears('📞 Contact Us', (ctx) => {
+  ctx.reply(
+    `📬 *Contact Support*\n\n` +
+    `If you need help or have feedback, reach out to:\n` +
+    `• Telegram: @pomi_276\n` +
+    `• Email: htewedaje@gmail.com`,
     { parse_mode: 'Markdown' }
   );
 });
@@ -249,7 +260,7 @@ bot.on('photo', async (ctx) => {
     fileId,
     {
       caption: `📥 Deposit #${id}\nUser: ${user.name} (${dep.userId})\nAmount: ${dep.amount}`,
-      ...Markup.inlineKeyboard([
+      ...Markup.inlineKeyboard([  
         Markup.button.callback('✅ Approve', `approve_d_${id}`),
         Markup.button.callback('❌ Reject',  `reject_d_${id}`)
       ])
@@ -320,9 +331,9 @@ async function sendDailyReport() {
     `🔴 Withdrawals:  ${todayWds}`;
   await bot.telegram.sendMessage(ADMIN_ID, msg);
 }
-// every 24h
 setInterval(sendDailyReport, 86_400_000);
 
 // ─── Launch ─────────────────────────────────────────────────────────────────
 bot.launch().then(() => console.log('🤖 Bot is running!'));
+
 
