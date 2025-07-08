@@ -28,15 +28,13 @@ const bot = new Telegraf(process.env.BOT_TOKEN);
 bot.use(session());
 bot.catch(async (err, ctx) => {
   console.error('❌ Bot Error:', err);
-  // Send you a DM
+  // Send you a plain‑text DM
   await bot.telegram.sendMessage(
     process.env.ADMIN_ID,
-    `⚠️ *Error Caught*\n` +
-    `\`Message:\` ${err.message}\n` +
-    `\`Update:\` ${ctx.updateType}`,
-    { parse_mode: 'Markdown' }
+    `⚠️ Error caught\nMessage: ${err.message}\nUpdate: ${ctx.updateType}`
   );
 });
+
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatUsers() {
