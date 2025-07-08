@@ -9,6 +9,18 @@ const app = express();
 app.get('/', (_req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Server listening on port 3000'));
 
+// ─── Cooldown Utility ─────────────────────────────────────────────────────────
+const cooldowns = {}; // { "<userId>_<action>": timestamp }
+function isOnCooldown(userId, action, seconds = 60) {
+  const key = `${userId}_${action}`;
+  const now = Date.now();
+  if (cooldowns[key] && now - cooldowns[key] < seconds * 1000) {
+    return true;
+  }
+  cooldowns[key] = now;
+  return false;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ADMIN_ID = process.env.ADMIN_ID;
 const COIN_VALUE_BIRR = 1;
@@ -114,14 +126,18 @@ bot.hears('📊 Transactions', async (ctx) => {
   let msg = '📊 Your Transactions:\n\n';
   if (!deps.length && !wds.length) msg += 'No transactions yet.';
   else {
-    if (deps.length) msg += '🟢 Deposits:\n' + deps.map(d=>`+${d.amount} (${d.status})`).join('\n') + '\n\n';
-    if (wds.length) msg += '🔴 Withdrawals:\n' + wds.map(w=>`-${w.amount} (${w.status})`).join('\n');
+    if (deps.length) msg += '🟢 Deposits:\n' + deps.map(d => `+${d.amount} (${d.status})`).join('\n') + '\n\n';
+    if (wds.length) msg += '🔴 Withdrawals:\n' + wds.map(w => `-${w.amount} (${w.status})`).join('\n');
   }
   ctx.reply(msg);
 });
 
-// ─── Deposit Flow ────────────────────────────────────────────────────────────
+// ─── Deposit Flow w/ Cooldown ─────────────────────────────────────────────────
 bot.hears('💰 Deposit Money', (ctx) => {
+  const uid = ctx.from.id.toString();
+  if (isOnCooldown(uid, 'deposit')) {
+    return ctx.reply('⏳ Please wait a minute before making another deposit.');
+  }
   ctx.session.action = 'deposit_amount';
   ctx.reply(
     `💳 To deposit coins:\n` +
@@ -131,8 +147,12 @@ bot.hears('💰 Deposit Money', (ctx) => {
   );
 });
 
-// ─── Withdraw Flow ───────────────────────────────────────────────────────────
+// ─── Withdraw Flow w/ Cooldown ────────────────────────────────────────────────
 bot.hears('💸 Withdraw Money', (ctx) => {
+  const uid = ctx.from.id.toString();
+  if (isOnCooldown(uid, 'withdraw')) {
+    return ctx.reply('⏳ Please wait a minute before making another withdrawal.');
+  }
   ctx.session.action = 'withdraw_amount';
   ctx.reply('💸 How many coins would you like to withdraw?');
 });
