@@ -26,6 +26,17 @@ const db = new Low(adapter, {
 // ─── Bot Init ─────────────────────────────────────────────────────────────────
 const bot = new Telegraf(process.env.BOT_TOKEN);
 bot.use(session());
+bot.catch(async (err, ctx) => {
+  console.error('❌ Bot Error:', err);
+  // Send you a DM
+  await bot.telegram.sendMessage(
+    process.env.ADMIN_ID,
+    `⚠️ *Error Caught*\n` +
+    `\`Message:\` ${err.message}\n` +
+    `\`Update:\` ${ctx.updateType}`,
+    { parse_mode: 'Markdown' }
+  );
+});
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatUsers() {
