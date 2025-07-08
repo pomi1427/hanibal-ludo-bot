@@ -126,8 +126,6 @@ bot.hears('📞 Contact Us', (ctx) => {
     `If you need help or have feedback, reach out to:\n` +
     `• Telegram: @pomi_276\n` +
     `• Email: htewedaje@gmail.com`,
-    { parse_mode: 'Markdown' }
-  );
 });
 
 // ─── Register (no-op) ─────────────────────────────────────────────────────────
