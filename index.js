@@ -88,21 +88,21 @@ bot.start(async (ctx) => {
     Markup.keyboard(menu).resize()
   );
 });
-
-// ─── Admin Tools (lists users + pending) ─────────────────────────────────────
-bot.hears('🛠 Admin Tools', async (ctx) => { 
-  bot.command('admin', async (ctx) => {
+bot.hears('🛠 Admin Tools', async (ctx) => {
   if (ctx.from.id.toString() !== ADMIN_ID) return;
   await db.read();
   const usersList   = formatUsers();
   const pendingList = formatPending();
+  // Send as plain text to avoid Markdown errors
   await ctx.reply(
-    `🔧 *Admin Panel*\n\n` +
-    `👥 *All Users:*\n${usersList}\n\n` +
-    `${pendingList}`,
-    { parse_mode: 'Markdown' }
+    `🔧 Admin Panel\n\n` +
+    `👥 All Users:\n${usersList}\n\n` +
+    `Pending Requests:\n${pendingList}`
   );
 });
+
+// ─── Admin Tools (lists users + pending) ─────────────────────────────────────
+
 
   if (ctx.from.id.toString() !== ADMIN_ID) return;
   await db.read();
