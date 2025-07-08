@@ -1,43 +1,79 @@
+// index.js
 const { Telegraf, Markup } = require('telegraf');
 const express = require('express');
 require('dotenv').config();
 const { Low } = require('lowdb');
 const { JSONFile } = require('lowdb/node');
 
-// ─── Express Keep‑Alive ───────────────────────────────────────────────────────
+// ——— Express Keep‑Alive ———————————————————————————————————————————————
 const app = express();
 app.get('/', (_req, res) => res.send('🤖 Hanibal Bot is alive!'));
-app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
+app.listen(3000, () => console.log('🌐 Server listening on port 3000'));
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const ADMIN_ID = process.env.ADMIN_ID;
-const COIN_VALUE_BIRR = 1;
-const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;
+// ——— Constants ——————————————————————————————————————————————————————
+const ADMIN_ID = process.env.ADMIN_ID;               // e.g. "123456789"
+const COIN_VALUE_BIRR = 1;                            // 1 coin = 1 Birr
+const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;  // from env
 
-// ─── LowDB Setup with default data ────────────────────────────────────────────
+// ——— LowDB Setup (with defaults) —————————————————————————————————————————
 const adapter = new JSONFile('db.json');
-// Pass the default data object as the second argument here:
-const db = new Low(adapter, { users: [], deposits: [], withdrawals: [] });
-
+const db = new Low(adapter, {
+  users: [],        // { id, name, username, coins, referredBy }
+  deposits: [],     // { id, userId, amount, status, screenshotFileId, timestamp }
+  withdrawals: [],  // { id, userId, amount, status, timestamp }
+});
 (async () => {
   await db.read();
-  // No need for db.data ||= … since defaults are provided
   await db.write();
 })();
 
-// ─── Bot Init ─────────────────────────────────────────────────────────────────
+// ——— Bot Initialization ———————————————————————————————————————————————
 const bot = new Telegraf(process.env.BOT_TOKEN);
-let botUsername = 'HanibalLudoBot';
-bot.telegram.getMe().then(info => botUsername = info.username);
+let botUsername = '';
+bot.telegram.getMe().then(info => { botUsername = info.username; });
 
-// ─── In‑Memory State ──────────────────────────────────────────────────────────
-const pendingOTPs = {};
-const pendingDeposits = {};
-const pendingWithdrawals = {};
+// ——— Helpers ————————————————————————————————————————————————————————
+function ensureUser(id, first_name, username, referrerId) {
+  const exists = db.data.users.find(u => u.id === id);
+  if (!exists) {
+    db.data.users.push({
+      id,
+      name: first_name,
+      username: username || '',
+      coins: 0,
+      referredBy: referrerId || null
+    });
+  }
+}
+function listUsers() {
+  return db.data.users.map(u => `👤 ${u.name} (@${u.username}) — ${u.coins} coins`).join('\n') || 'No users yet.';
+}
+function listPending() {
+  const deps = db.data.deposits.filter(d => d.status === 'pending');
+  const wds = db.data.withdrawals.filter(w => w.status === 'pending');
+  let msg = '';
+  if (deps.length) {
+    msg += '🟢 *Pending Deposits:*\n';
+    deps.forEach(d => msg += `• #${d.id} by ${d.userId} — ${d.amount} coins\n`);
+    msg += '\n';
+  }
+  if (wds.length) {
+    msg += '🔴 *Pending Withdrawals:*\n';
+    wds.forEach(w => msg += `• #${w.id} by ${w.userId} — ${w.amount} coins\n`);
+  }
+  return msg || 'No pending requests.';
+}
 
-// ─── /start & Menu ────────────────────────────────────────────────────────────
-bot.start((ctx) => {
-  const isAdmin = ctx.from.id.toString() === ADMIN_ID;
+// ——— /start with referral support —————————————————————————————————————————
+bot.start(async (ctx) => {
+  const id = ctx.from.id;
+  const ref = ctx.startPayload;  // payload from /start?start=<ref>
+  await db.read();
+  ensureUser(id, ctx.from.first_name, ctx.from.username, ref);
+  await db.write();
+
+  // Build menu
+  const isAdmin = id.toString() === ADMIN_ID;
   const menu = [
     ['📝 Register', '💼 Check Balance'],
     ['💰 Deposit Money', '💸 Withdraw Money'],
@@ -45,60 +81,49 @@ bot.start((ctx) => {
     ['📊 Transactions']
   ];
   if (isAdmin) menu.push(['🛠 Admin Tools']);
-  ctx.reply(
-    `👋 Welcome, ${ctx.from.first_name}!\n💰 1 Coin = ${COIN_VALUE_BIRR} Birr\nUse the menu below:`,
+
+  await ctx.reply(
+    `👋 Welcome, ${ctx.from.first_name}!\n` +
+    `💰 1 Coin = ${COIN_VALUE_BIRR} Birr\n` +
+    `Use the menu below:`,
     Markup.keyboard(menu).resize()
   );
 });
 
-// ─── Admin Tools ──────────────────────────────────────────────────────────────
-bot.hears('🛠 Admin Tools', async (ctx) => {
-  if (ctx.from.id.toString() !== ADMIN_ID) return;
-  await db.read();
-  const pendingDeps = db.data.deposits.filter(d => d.status === 'pending');
-  const pendingWds = db.data.withdrawals.filter(w => w.status === 'pending');
-  ctx.reply(
-    `🛠 *Admin Panel*\n\n` +
-    `🟢 Pending Deposits: ${pendingDeps.length}\n` +
-    `🔴 Pending Withdrawals: ${pendingWds.length}`,
-    { parse_mode: 'Markdown' }
-  );
-});
-
-// ─── Registration with OTP ────────────────────────────────────────────────────
-bot.hears('📝 Register', async (ctx) => {
+// ——— User Commands ————————————————————————————————————————————————————
+// /referrals — list users referred by me
+bot.command('referrals', async (ctx) => {
   const id = ctx.from.id;
   await db.read();
-  if (db.data.users.find(u => u.id === id)) return ctx.reply('✅ Already registered.');
-  const otp = String(Math.floor(1000 + Math.random() * 9000));
-  pendingOTPs[id] = otp;
-  ctx.reply(`🔐 Your OTP: ${otp}\nSend it back exactly to complete registration.`);
-});
-bot.hears(/^\d{4}$/, async (ctx) => {
-  const id = ctx.from.id, txt = ctx.message.text;
-  if (pendingOTPs[id] === txt) {
-    await db.read();
-    db.data.users.push({
-      id,
-      name: ctx.from.first_name,
-      username: ctx.from.username || '',
-      coins: 0,
-      referredBy: null
-    });
-    delete pendingOTPs[id];
-    await db.write();
-    ctx.reply('🎉 Registration complete! You have 0 coins.');
-  }
+  const referred = db.data.users.filter(u => u.referredBy === id.toString());
+  if (!referred.length) return ctx.reply('😕 You haven’t referred anyone yet.');
+  const lines = referred.map(u => `👤 ${u.name} (@${u.username})`);
+  ctx.reply(`📢 *Your Referrals:*\n\n${lines.join('\n')}`, { parse_mode: 'Markdown' });
 });
 
-// ─── Balance, Referral, ID, Transactions ─────────────────────────────────────
+// /users — admin only, lists all users
+bot.command('users', async (ctx) => {
+  if (ctx.from.id.toString() !== ADMIN_ID) return;
+  await db.read();
+  ctx.reply(`👥 *All Users:*\n\n${listUsers()}`, { parse_mode: 'Markdown' });
+});
+
+// /pending — admin only, show all pending
+bot.command('pending', async (ctx) => {
+  if (ctx.from.id.toString() !== ADMIN_ID) return;
+  await db.read();
+  ctx.reply(listPending(), { parse_mode: 'Markdown' });
+});
+
+// ——— Generic Menu Actions —————————————————————————————————————————————
+bot.hears('📝 Register', (ctx) => ctx.reply('✅ You’re already registered and logged in.'));
 bot.hears('💼 Check Balance', async (ctx) => {
   await db.read();
   const u = db.data.users.find(u => u.id === ctx.from.id);
-  ctx.reply(u ? `💰 Your balance: ${u.coins} coins` : '❗ Please register first.');
+  ctx.reply(u ? `💰 Your balance: ${u.coins} coins` : '❗ Please /start to register.');
 });
 bot.hears('📢 Referral Link', (ctx) => {
-  ctx.reply(`🔗 Invite:\nhttps://t.me/${botUsername}?start=${ctx.from.id}`);
+  ctx.reply(`🔗 Invite friends:\nhttps://t.me/${botUsername}?start=${ctx.from.id}`);
 });
 bot.hears('🔍 My ID', (ctx) => ctx.reply(`🆔 Your Telegram ID: ${ctx.from.id}`));
 bot.hears('📊 Transactions', async (ctx) => {
@@ -107,109 +132,132 @@ bot.hears('📊 Transactions', async (ctx) => {
   const deps = db.data.deposits.filter(d => d.userId === uid);
   const wds = db.data.withdrawals.filter(w => w.userId === uid);
   let msg = '📊 *Your Transactions:*\n\n';
-  if (!deps.length && !wds.length) {
-    msg += '_No transactions yet._';
-  } else {
-    if (deps.length) msg += '🟢 *Deposits:*\n' + deps.map(d => `+${d.amount} (${d.status})`).join('\n') + '\n';
-    if (wds.length) msg += '\n🔴 *Withdrawals:*\n' + wds.map(w => `-${w.amount} (${w.status})`).join('\n') + '\n';
+  if (!deps.length && !wds.length) msg += '_No transactions._';
+  else {
+    if (deps.length) msg += '🟢 *Deposits:*\n' + deps.map(d=>`+${d.amount} (${d.status})`).join('\n') + '\n\n';
+    if (wds.length) msg += '🔴 *Withdrawals:*\n' + wds.map(w=>`-${w.amount} (${w.status})`).join('\n');
   }
   ctx.reply(msg, { parse_mode: 'Markdown' });
 });
 
-// ─── Deposit Flow with Screenshot ────────────────────────────────────────────
+// ——— Deposit Flow ————————————————————————————————————————————————————
 bot.hears('💰 Deposit Money', (ctx) => {
-  pendingDeposits[ctx.from.id] = { step: 'await_amount' };
   ctx.reply(
     `💳 To deposit coins:\n` +
-    `1. Pay via Telebirr: *${TELEBIRR_NUMBER}*\n` +
-    `2. Reply with the amount you paid.`,
+    `1. Pay *${COIN_VALUE_BIRR} Birr* per coin to Telebirr: *${TELEBIRR_NUMBER}*\n` +
+    `2. Reply with the amount you paid.\n` +
+    `3. Then send a screenshot of payment.`,
     { parse_mode: 'Markdown' }
   );
+  ctx.session = { action: 'await_deposit_amount' };
 });
-bot.on('text', async (ctx, next) => {
-  const id = ctx.from.id, txt = ctx.message.text.trim();
-  const pd = pendingDeposits[id];
-  await db.read();
-  if (pd && pd.step === 'await_amount') {
-    const amt = parseInt(txt, 10);
-    if (isNaN(amt) || amt <= 0) {
-      delete pendingDeposits[id];
-      return ctx.reply('❗ Invalid amount.');
-    }
-    pd.step = 'await_screenshot';
-    pd.amount = amt;
-    return ctx.reply('📸 Please send a screenshot of your payment now.');
-  }
-  return next();
+
+// ——— Withdrawal Flow ————————————————————————————————————————————————
+bot.hears('💸 Withdraw Money', (ctx) => {
+  ctx.reply('💸 How many coins would you like to withdraw?');
+  ctx.session = { action: 'await_withdraw_amount' };
 });
-bot.on('photo', async (ctx) => {
+
+// ——— Single text handler for flow actions —————————————————————————————————
+bot.on('message', async (ctx, next) => {
   const id = ctx.from.id;
-  const pd = pendingDeposits[id];
-  if (pd && pd.step === 'await_screenshot') {
-    const fileId = ctx.message.photo.slice(-1)[0].file_id;
-    const requestId = Date.now();
-    await db.read();
+  const text = ctx.message.text && ctx.message.text.trim();
+  if (!ctx.session) return next();
+
+  await db.read();
+  const user = db.data.users.find(u => u.id === id);
+  if (!user) { ctx.reply('❗ Please /start to register.'); ctx.session = null; return; }
+
+  // Deposit amount step
+  if (ctx.session.action === 'await_deposit_amount' && text) {
+    const amount = parseInt(text, 10);
+    if (isNaN(amount) || amount <= 0) {
+      ctx.reply('❗ Enter a valid positive number.');
+      return;
+    }
+    // store deposit stub
+    const reqId = Date.now();
     db.data.deposits.push({
-      requestId, userId: id, amount: pd.amount, status: 'pending', screenshot: fileId
+      id: reqId, userId: id, amount, status: 'pending', screenshotFileId: null,
+      timestamp: new Date().toISOString()
     });
     await db.write();
-    delete pendingDeposits[id];
-    ctx.reply(`📨 Deposit of ${pd.amount} coins submitted with screenshot.`);
-    const user = db.data.users.find(u => u.id === id);
-    await bot.telegram.sendPhoto(
-      ADMIN_ID,
-      fileId,
-      {
-        caption: `📥 Deposit #${requestId}\nUser: ${user.name} (${id})\nAmount: ${pd.amount} coins`,
-        ...Markup.inlineKeyboard([
-          Markup.button.callback('✅ Approve', `approve_dep_${requestId}`),
-          Markup.button.callback('❌ Reject', `reject_dep_${requestId}`)
-        ])
-      }
-    );
-  }
-});
-
-// ─── Withdraw Flow ───────────────────────────────────────────────────────────
-bot.hears('💸 Withdraw Money', (ctx) => {
-  pendingWithdrawals[ctx.from.id] = true;
-  ctx.reply('💸 How many coins would you like to withdraw?');
-});
-bot.on('text', async (ctx, next) => {
-  const id = ctx.from.id, txt = ctx.message.text.trim();
-  if (pendingWithdrawals[id]) {
-    delete pendingWithdrawals[id];
-    await db.read();
-    const user = db.data.users.find(u => u.id === id);
-    const amt = parseInt(txt, 10);
-    if (isNaN(amt) || amt <= 0 || user.coins < amt) {
-      return ctx.reply('❗ Invalid amount or insufficient balance.');
-    }
-    const requestId = Date.now();
-    db.data.withdrawals.push({ requestId, userId: id, amount: amt, status: 'pending' });
-    await db.write();
-    ctx.reply(`📨 Withdrawal request for ${amt} coins submitted.`);
-    await bot.telegram.sendMessage(
-      ADMIN_ID,
-      `📤 Withdraw #${requestId}\nUser: ${user.name} (${id})\nAmount: ${amt} coins`,
-      Markup.inlineKeyboard([
-        Markup.button.callback('✅ Approve', `approve_wd_${requestId}`),
-        Markup.button.callback('❌ Reject', `reject_wd_${requestId}`)
-      ])
-    );
+    ctx.reply('📸 Now please send a screenshot of your payment.');
+    ctx.session = { action: 'await_deposit_screenshot', reqId };
     return;
   }
+
+  // Withdraw amount step
+  if (ctx.session.action === 'await_withdraw_amount' && text) {
+    const amount = parseInt(text, 10);
+    if (isNaN(amount) || amount <= 0 || user.coins < amount) {
+      ctx.reply('❗ Invalid or insufficient balance.');
+      ctx.session = null;
+      return;
+    }
+    const reqId = Date.now();
+    db.data.withdrawals.push({
+      id: reqId, userId: id, amount, status: 'pending',
+      timestamp: new Date().toISOString()
+    });
+    await db.write();
+    ctx.reply('✅ Withdrawal request submitted.');
+    // notify admin
+    await bot.telegram.sendMessage(
+      ADMIN_ID,
+      `📤 Withdraw Request #${reqId}\nUser: ${user.name} (${id})\nAmount: ${amount} coins`,
+      Markup.inlineKeyboard([
+        Markup.button.callback('✅ Approve', `approve_w_${reqId}`),
+        Markup.button.callback('❌ Reject', `reject_w_${reqId}`)
+      ])
+    );
+    ctx.session = null;
+    return;
+  }
+
   return next();
 });
 
-// ─── Admin Approvals ─────────────────────────────────────────────────────────
-bot.on('callback_query', async (ctx) => {
-  const [action, type, reqId] = ctx.callbackQuery.data.split('_');
+// ——— Photo handler for deposit screenshot —————————————————————————————————
+bot.on('photo', async (ctx) => {
+  if (!ctx.session || ctx.session.action !== 'await_deposit_screenshot') return;
+  const { reqId } = ctx.session;
+  const fileId = ctx.message.photo.slice(-1)[0].file_id;
+
   await db.read();
-  if (type === 'dep') {
-    const dep = db.data.deposits.find(d => d.requestId.toString() === reqId);
+  const dep = db.data.deposits.find(d => d.id === reqId);
+  if (!dep || dep.status !== 'pending') { ctx.session = null; return; }
+
+  dep.screenshotFileId = fileId;
+  await db.write();
+
+  ctx.reply('📨 Deposit submitted for approval.');
+  // notify admin with photo
+  await bot.telegram.sendPhoto(
+    ADMIN_ID,
+    fileId,
+    {
+      caption: `📥 Deposit #${reqId}\nUser: ${ctx.from.first_name} (${ctx.from.id})\nAmount: ${dep.amount} coins`,
+      ...Markup.inlineKeyboard([
+        Markup.button.callback('✅ Approve', `approve_d_${reqId}`),
+        Markup.button.callback('❌ Reject', `reject_d_${reqId}`)
+      ])
+    }
+  );
+  ctx.session = null;
+});
+
+// ——— Admin approval callbacks —————————————————————————————————————————
+bot.on('callback_query', async (ctx) => {
+  const [action, type, rawId] = ctx.callbackQuery.data.split('_');
+  const reqId = parseInt(rawId, 10);
+  await db.read();
+
+  // Deposit approval
+  if (type === 'd') {
+    const dep = db.data.deposits.find(d => d.id === reqId);
+    if (!dep || dep.status !== 'pending') return ctx.answerCbQuery();
     const user = db.data.users.find(u => u.id === dep.userId);
-    if (!dep || dep.status !== 'pending') return ctx.answerCbQuery('Invalid');
     if (action === 'approve') {
       dep.status = 'approved';
       user.coins += dep.amount;
@@ -220,14 +268,16 @@ bot.on('callback_query', async (ctx) => {
       dep.status = 'rejected';
       await db.write();
       ctx.editMessageCaption(`❌ Deposit #${reqId} rejected.`);
-      bot.telegram.sendMessage(user.id, `❌ Your deposit of ${dep.amount} coins was rejected.`);
+      bot.telegram.sendMessage(dep.userId, `❌ Your deposit of ${dep.amount} coins was rejected.`);
     }
     return ctx.answerCbQuery();
   }
-  if (type === 'wd') {
-    const wd = db.data.withdrawals.find(w => w.requestId.toString() === reqId);
+
+  // Withdraw approval
+  if (type === 'w') {
+    const wd = db.data.withdrawals.find(w => w.id === reqId);
+    if (!wd || wd.status !== 'pending') return ctx.answerCbQuery();
     const user = db.data.users.find(u => u.id === wd.userId);
-    if (!wd || wd.status !== 'pending') return ctx.answerCbQuery('Invalid');
     if (action === 'approve') {
       wd.status = 'approved';
       user.coins -= wd.amount;
@@ -238,13 +288,12 @@ bot.on('callback_query', async (ctx) => {
       wd.status = 'rejected';
       await db.write();
       ctx.editMessageText(`❌ Withdrawal #${reqId} rejected.`);
-      bot.telegram.sendMessage(user.id, `❌ Your withdrawal of ${wd.amount} coins was rejected.`);
+      bot.telegram.sendMessage(wd.userId, `❌ Your withdrawal of ${wd.amount} coins was rejected.`);
     }
     return ctx.answerCbQuery();
   }
 });
 
-// ─── Launch Bot ───────────────────────────────────────────────────────────────
-bot.launch();
-console.log('🤖 Bot is running...');
+// ——— Launch ————————————————————————————————————————————————————————
+bot.launch().then(() => console.log('🤖 Bot is running!'));
 
