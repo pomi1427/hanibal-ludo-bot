@@ -120,8 +120,13 @@ bot.hears('💼 Check Balance', async (ctx) => {
   ctx.reply(u ? `💰 Your balance: ${u.coins} coins` : '❗ Please /start to register.');
 });
 bot.hears('📢 Referral Link', (ctx) => {
-  ctx.reply(`🔗 Invite friends:\nhttps://t.me/${botUsername}?start=${ctx.from.id}`);
+  // ctx.botInfo.username is always available once the bot has started
+  const username = ctx.botInfo.username;
+  ctx.reply(
+    `🔗 Invite friends:\nhttps://t.me/${username}?start=${ctx.from.id}`
+  );
 });
+
 bot.hears('🔍 My ID', (ctx) => ctx.reply(`🆔 Your Telegram ID: ${ctx.from.id}`));
 bot.hears('📊 Transactions', async (ctx) => {
   await db.read();
