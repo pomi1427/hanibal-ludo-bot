@@ -10,7 +10,7 @@ app.get('/', (_req, res) => res.send('🤖 Hanibal Bot is alive!'));
 app.listen(3000, () => console.log('🌐 Server listening on port 3000'));
 
 // ─── Cooldown Utility ─────────────────────────────────────────────────────────
-const cooldowns = {}; // { "<userId>_<action>": timestamp }
+const cooldowns = {}; 
 function isOnCooldown(userId, action, seconds = 60) {
   const key = `${userId}_${action}`;
   const now = Date.now();
@@ -29,7 +29,7 @@ const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;
 // ─── LowDB Setup (with defaults) ──────────────────────────────────────────────
 const adapter = new JSONFile('db.json');
 const db = new Low(adapter, {
-  users: [],        // { id, name, username, coins, referredBy }
+  users: [],        // { id, name, username, coins, referredBy, timestamp }
   deposits: [],     // { id, userId, amount, status, screenshotFileId, timestamp }
   withdrawals: []   // { id, userId, amount, status, timestamp }
 });
@@ -71,7 +71,8 @@ bot.start(async (ctx) => {
       name: ctx.from.first_name,
       username: ctx.from.username || '',
       coins: 0,
-      referredBy: null
+      referredBy: null,
+      timestamp: new Date().toISOString().slice(0,10)  // YYYY-MM-DD
     });
     await db.write();
   }
@@ -82,7 +83,9 @@ bot.start(async (ctx) => {
   ];
   if (id === ADMIN_ID) menu.push(['🛠 Admin Tools']);
   await ctx.reply(
-    `👋 Hello, ${ctx.from.first_name}!\n💰 1 Coin = ${COIN_VALUE_BIRR} Birr\nUse the menu below:`,
+    `👋 Hello, ${ctx.from.first_name}!\n` +
+    `💰 1 Coin = ${COIN_VALUE_BIRR} Birr\n` +
+    `Use the menu below:`,
     Markup.keyboard(menu).resize()
   );
 });
@@ -100,6 +103,22 @@ bot.hears('🛠 Admin Tools', async (ctx) => {
   );
 });
 
+// ─── /help Command ─────────────────────────────────────────────────────────────
+bot.command('help', (ctx) => {
+  ctx.reply(
+    `❓ *Help Menu*\n\n` +
+    `📝 /start – Register / show main menu\n` +
+    `💼 Check Balance – See your coin balance\n` +
+    `💰 Deposit Money – Add coins via Telebirr + screenshot\n` +
+    `💸 Withdraw Money – Request a coin withdrawal\n` +
+    `🔍 My ID – Get your Telegram ID\n` +
+    `📊 Transactions – View your history\n` +
+    `🛠 Admin Tools – (admin only) All users & pending\n` +
+    `/help – Show this menu`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
 // ─── Register (no-op) ─────────────────────────────────────────────────────────
 bot.hears('📝 Register', (ctx) => {
   ctx.reply('✅ You’re already registered via /start.');
@@ -108,7 +127,7 @@ bot.hears('📝 Register', (ctx) => {
 // ─── Check Balance ───────────────────────────────────────────────────────────
 bot.hears('💼 Check Balance', async (ctx) => {
   await db.read();
-  const u = db.data.users.find(u => u.id.toString() === ctx.from.id.toString());
+  const u = db.data.users.find(u => u.id === ctx.from.id.toString());
   ctx.reply(u ? `💰 Your balance: ${u.coins} coins` : '❗ Please /start to register.');
 });
 
@@ -126,8 +145,8 @@ bot.hears('📊 Transactions', async (ctx) => {
   let msg = '📊 Your Transactions:\n\n';
   if (!deps.length && !wds.length) msg += 'No transactions yet.';
   else {
-    if (deps.length) msg += '🟢 Deposits:\n' + deps.map(d => `+${d.amount} (${d.status})`).join('\n') + '\n\n';
-    if (wds.length) msg += '🔴 Withdrawals:\n' + wds.map(w => `-${w.amount} (${w.status})`).join('\n');
+    if (deps.length) msg += '🟢 Deposits:\n' + deps.map(d=>`+${d.amount} (${d.status})`).join('\n') + '\n\n';
+    if (wds.length) msg += '🔴 Withdrawals:\n' + wds.map(w=>`-${w.amount} (${w.status})`).join('\n');
   }
   ctx.reply(msg);
 });
@@ -165,6 +184,7 @@ bot.on('message', async (ctx, next) => {
   const user = db.data.users.find(u => u.id === uid);
   const text = ctx.message.text && ctx.message.text.trim();
 
+  // Deposit amount
   if (ctx.session.action === 'deposit_amount' && text) {
     const amt = parseInt(text, 10);
     if (isNaN(amt) || amt <= 0) {
@@ -172,12 +192,17 @@ bot.on('message', async (ctx, next) => {
       return;
     }
     const id = Date.now();
-    db.data.deposits.push({ id, userId: uid, amount: amt, status: 'pending', screenshotFileId: null, timestamp: new Date().toISOString() });
+    db.data.deposits.push({
+      id, userId: uid, amount: amt, status: 'pending',
+      screenshotFileId: null,
+      timestamp: new Date().toISOString()
+    });
     await db.write();
     ctx.session = { action: 'deposit_screenshot', id };
     return ctx.reply('📸 Please send a screenshot of your payment.');
   }
 
+  // Withdraw amount
   if (ctx.session.action === 'withdraw_amount' && text) {
     const amt = parseInt(text, 10);
     if (isNaN(amt) || amt <= 0 || user.coins < amt) {
@@ -186,7 +211,10 @@ bot.on('message', async (ctx, next) => {
       return;
     }
     const id = Date.now();
-    db.data.withdrawals.push({ id, userId: uid, amount: amt, status: 'pending', timestamp: new Date().toISOString() });
+    db.data.withdrawals.push({
+      id, userId: uid, amount: amt, status: 'pending',
+      timestamp: new Date().toISOString()
+    });
     await db.write();
     ctx.reply('✅ Withdrawal request submitted.');
     await bot.telegram.sendMessage(
@@ -278,5 +306,23 @@ bot.catch(async (err, ctx) => {
   );
 });
 
+// ─── Daily Summary ───────────────────────────────────────────────────────────
+async function sendDailyReport() {
+  await db.read();
+  const today = new Date().toISOString().slice(0,10);
+  const newUsers   = db.data.users.filter(u => u.timestamp === today).length;
+  const todayDeps  = db.data.deposits.filter(d => d.timestamp.startsWith(today)).length;
+  const todayWds   = db.data.withdrawals.filter(w => w.timestamp.startsWith(today)).length;
+  const msg =
+    `📊 Daily Report (${today})\n` +
+    `👤 New Users:    ${newUsers}\n` +
+    `🟢 Deposits:     ${todayDeps}\n` +
+    `🔴 Withdrawals:  ${todayWds}`;
+  await bot.telegram.sendMessage(ADMIN_ID, msg);
+}
+// every 24h
+setInterval(sendDailyReport, 86_400_000);
+
 // ─── Launch ─────────────────────────────────────────────────────────────────
 bot.launch().then(() => console.log('🤖 Bot is running!'));
+
