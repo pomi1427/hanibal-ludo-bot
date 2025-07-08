@@ -90,7 +90,20 @@ bot.start(async (ctx) => {
 });
 
 // ─── Admin Tools (lists users + pending) ─────────────────────────────────────
-bot.hears('🛠 Admin Tools', async (ctx) => {
+bot.hears('🛠 Admin Tools', async (ctx) => { 
+  bot.command('admin', async (ctx) => {
+  if (ctx.from.id.toString() !== ADMIN_ID) return;
+  await db.read();
+  const usersList   = formatUsers();
+  const pendingList = formatPending();
+  await ctx.reply(
+    `🔧 *Admin Panel*\n\n` +
+    `👥 *All Users:*\n${usersList}\n\n` +
+    `${pendingList}`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
   if (ctx.from.id.toString() !== ADMIN_ID) return;
   await db.read();
   const usersList   = formatUsers();
