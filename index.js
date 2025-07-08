@@ -1,36 +1,33 @@
-// index.js
-const { Telegraf, Markup } = require('telegraf');
+const { Telegraf, Markup, session } = require('telegraf');
 const express = require('express');
 require('dotenv').config();
 const { Low } = require('lowdb');
 const { JSONFile } = require('lowdb/node');
 
-// ——— Express Keep‑Alive ———————————————————————————————————————————————
+// Express Keep‑Alive
 const app = express();
 app.get('/', (_req, res) => res.send('🤖 Hanibal Bot is alive!'));
-app.listen(3000, () => console.log('🌐 Server listening on port 3000'));
+app.listen(3000, () => console.log('🌐 Web server running on port 3000'));
 
-// ——— Constants ——————————————————————————————————————————————————————
-const ADMIN_ID = process.env.ADMIN_ID;               // e.g. "123456789"
-const COIN_VALUE_BIRR = 1;                            // 1 coin = 1 Birr
-const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;  // from env
+// Constants
+const ADMIN_ID = process.env.ADMIN_ID;
+const COIN_VALUE_BIRR = 1;
+const TELEBIRR_NUMBER = process.env.TELEBIRR_NUMBER;
 
-// ——— LowDB Setup (with defaults) —————————————————————————————————————————
+// LowDB Setup…
 const adapter = new JSONFile('db.json');
-const db = new Low(adapter, {
-  users: [],        // { id, name, username, coins, referredBy }
-  deposits: [],     // { id, userId, amount, status, screenshotFileId, timestamp }
-  withdrawals: [],  // { id, userId, amount, status, timestamp }
-});
-(async () => {
-  await db.read();
-  await db.write();
-})();
+const db = new Low(adapter, { users: [], deposits: [], withdrawals: [] });
+(async () => { await db.read(); await db.write(); })();
 
-// ——— Bot Initialization ———————————————————————————————————————————————
+// ─── Bot Init & Session ───────────────────────────────────────────────────────
 const bot = new Telegraf(process.env.BOT_TOKEN);
-let botUsername = '';
-bot.telegram.getMe().then(info => { botUsername = info.username; });
+// ←——— insert this next line
+bot.use(session());
+
+bot.telegram.getMe().then(info => {
+  bot.options.username = info.username; // so your code can reference bot.options.username
+});
+
 
 // ——— Helpers ————————————————————————————————————————————————————————
 function ensureUser(id, first_name, username, referrerId) {
